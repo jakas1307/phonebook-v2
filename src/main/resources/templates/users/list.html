@@ -288,10 +288,13 @@
 
             function showLoading() {
                 if (loadingIndicator) loadingIndicator.classList.remove("d-none");
+                // Hasil lama tetap tampil (sedikit redup) sampai hasil baru datang, tanpa flicker.
+                if (resultsContainer) resultsContainer.style.opacity = "0.5";
             }
 
             function hideLoading() {
                 if (loadingIndicator) loadingIndicator.classList.add("d-none");
+                if (resultsContainer) resultsContainer.style.opacity = "";
             }
 
             // Kumpulkan parameter filter terkini dari form, selalu reset ke halaman pertama.
@@ -344,6 +347,7 @@
             }
 
             // Ambil hasil & ganti area hasil. Abort request lama supaya tidak menimpa.
+            // opts.replace: ganti URL di history (dipakai saat mengetik, supaya tidak menumpuk).
             function fetchResults(params, opts) {
                 opts = opts || {};
                 const pushHistory = opts.push !== false;
@@ -367,7 +371,9 @@
                         if (currentController !== controller) return;
                         resultsContainer.outerHTML = html;
                         resultsContainer = document.getElementById("usersResults");
-                        if (pushHistory) {
+                        if (opts.replace) {
+                            history.replaceState({}, "", url);
+                        } else if (pushHistory) {
                             history.pushState({}, "", url);
                         }
                     })
@@ -396,8 +402,17 @@
 
             if (keywordInput) {
                 keywordInput.addEventListener("input", debounce(function () {
+                    fetchResults(collectParams(), { replace: true });
+                }, 250));
+            }
+
+            // Enter / tombol Filter: cari via AJAX tanpa reload halaman penuh.
+            const filterForm = keywordInput ? keywordInput.closest("form") : null;
+            if (filterForm) {
+                filterForm.addEventListener("submit", function (e) {
+                    e.preventDefault();
                     fetchResults(collectParams(), { push: true });
-                }, 300));
+                });
             }
 
             if (subregionSelect) {

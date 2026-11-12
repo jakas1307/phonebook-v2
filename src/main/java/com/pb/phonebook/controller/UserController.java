@@ -74,13 +74,22 @@ public class UserController {
             Model model,
             HttpServletRequest request) {
 
-        model.addAttribute("subregions", locationRepository.findDistinctSubregions());
+        // AJAX (fetch): kembalikan hanya fragment hasil, bukan halaman penuh.
+        // Header "X-Requested-With: fetch" dikirim dari JS frontend; "HX-Request"
+        // didukung juga kalau nanti memakai htmx.
+        boolean fragmentRequest = "fetch".equalsIgnoreCase(request.getHeader("X-Requested-With"))
+                || request.getHeader("HX-Request") != null;
 
-        // Jika subregion dipilih, ambil lokasi sesuai subregion. Jika belum, ambil semua lokasi.
-        List<LocationDto> locations = (subregion != null && !subregion.isBlank())
-                ? locationService.getLocationsBySubregion(subregion)
-                : locationService.getAllLocations();
-        model.addAttribute("locations", locations);
+        // Dropdown hanya dibutuhkan untuk halaman penuh, bukan fragment hasil.
+        if (!fragmentRequest) {
+            model.addAttribute("subregions", locationRepository.findDistinctSubregions());
+
+            // Jika subregion dipilih, ambil lokasi sesuai subregion. Jika belum, ambil semua lokasi.
+            List<LocationDto> locations = (subregion != null && !subregion.isBlank())
+                    ? locationService.getLocationsBySubregion(subregion)
+                    : locationService.getAllLocations();
+            model.addAttribute("locations", locations);
+        }
 
         model.addAttribute("selectedSubregion", subregion);
         model.addAttribute("selectedLocationId", locationId);
@@ -116,12 +125,6 @@ public class UserController {
         model.addAttribute("pageSize", pageSize);
         model.addAttribute("startPage", startPage);
         model.addAttribute("endPage", endPage);
-
-        // AJAX (fetch): kembalikan hanya fragment hasil, bukan halaman penuh.
-        // Header "X-Requested-With: fetch" dikirim dari JS frontend; "HX-Request"
-        // didukung juga kalau nanti memakai htmx.
-        boolean fragmentRequest = "fetch".equalsIgnoreCase(request.getHeader("X-Requested-With"))
-                || request.getHeader("HX-Request") != null;
 
         return fragmentRequest ? "users/list :: usersResults" : "users/list";
     }

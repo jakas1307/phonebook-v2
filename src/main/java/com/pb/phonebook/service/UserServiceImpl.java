@@ -1,10 +1,10 @@
 package com.pb.phonebook.service;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -229,42 +229,39 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<UserDto> searchUsers(String keyword, String subregion, Long locationId, String sortField, String sortDir) {
-        String cleanKeyword = (keyword != null && !keyword.trim().isEmpty()) ? keyword.trim() : null;
-        String cleanSubregion = (subregion != null && !subregion.trim().isEmpty()) ? subregion.trim() : null;
-
-        Sort sort = createSort(sortField, sortDir);
-
-        List<User> rawUsers = userRepository.searchUsersWithSubregion(cleanKeyword, cleanSubregion, locationId, sort);
-
-        // Deduplikasi user berdasarkan ID dengan tetap menjaga urutan sorting dari query SQL
-        Map<Long, User> uniqueUsers = new LinkedHashMap<>();
-        for (User u : rawUsers) {
-            if (u != null && u.getId() != null) {
-                uniqueUsers.putIfAbsent(u.getId(), u);
-            }
-        }
-
-        return uniqueUsers.values()
-                .stream()
-                .map(this::mapToDto)
-                .toList();
+        return searchUsersPaginated(keyword, subregion, locationId, sortField, sortDir, 1, Integer.MAX_VALUE).getContent();
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<UserDto> searchUsersPaginated(String keyword, String subregion, Long locationId, String sortField, String sortDir, int page, int size) {
-        List<UserDto> allUsers = searchUsers(keyword, subregion, locationId, sortField, sortDir);
+        String cleanKeyword = (keyword != null && !keyword.trim().isEmpty()) ? keyword.trim() : null;
+        String cleanSubregion = (subregion != null && !subregion.trim().isEmpty()) ? subregion.trim() : null;
 
         int pageSize = size > 0 ? size : 15;
         int pageIndex = Math.max(0, page - 1);
-        int total = allUsers.size();
+        // Tie-breaker id agar urutan stabil antar halaman
+        Sort sort = createSort(sortField, sortDir).and(Sort.by(Sort.Direction.ASC, "id"));
+        Pageable pageable = PageRequest.of(pageIndex, pageSize, sort);
 
-        int start = Math.min(pageIndex * pageSize, total);
-        int end = Math.min(start + pageSize, total);
-        List<UserDto> pageContent = allUsers.subList(start, end);
+        // Langkah 1: paginasi ID di database. Langkah 2: fetch detail user sekali jalan.
+        Page<Long> idPage = userRepository.searchUserIds(cleanKeyword, cleanSubregion, locationId, pageable);
+        List<Long> ids = idPage.getContent();
 
-        Pageable pageable = PageRequest.of(pageIndex, pageSize);
-        return new PageImpl<>(pageContent, pageable, total);
+        Map<Long, User> usersById = ids.isEmpty()
+                ? Map.of()
+                : userRepository.findByIdIn(ids).stream()
+                        .collect(Collectors.toMap(User::getId, u -> u));
+
+        List<UserDto> content = ids.stream()
+                .map(usersById::get)
+                .filter(Objects::nonNull)
+                .map(this::mapToDto)
+                .toList();
+
+        return new PageImpl<>(content, pageable, idPage.getTotalElements());
     }
 
     @Override
